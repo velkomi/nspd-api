@@ -1,14 +1,14 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import httpx
+import requests
 import os
 
-app = FastAPI(title="NSPD API", version="4.1.0")
+app = FastAPI(title="NSPD API", version="4.2.0")
 
 class SearchRequest(BaseModel):
     cadastral_number: str
 
-async def get_nspd_data(cadastral_number: str):
+def get_nspd_data(cadastral_number: str):
     """Получает данные из NSPD API"""
     url = f"https://nspd.gov.ru/api/geoportal/v2/search/geoportal?thematicSearchId=1&query={cadastral_number}"
     
@@ -19,17 +19,13 @@ async def get_nspd_data(cadastral_number: str):
         "X-Requested-With": "XMLHttpRequest"
     }
     
-    # Проверяем есть ли переменная окружения для прокси
-    proxy = os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
-    
+    # Railway не блокирует requests, только httpx!
     try:
-        # Если есть прокси - используем его
-        async with httpx.AsyncClient(timeout=30, verify=False, proxies=proxy) as client:
-            response = await client.get(url, headers=headers)
-            if response.status_code == 200:
-                return response.json()
-            else:
-                return {"error": f"Status code: {response.status_code}"}
+        response = requests.get(url, headers=headers, timeout=30, verify=False)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"error": f"Status code: {response.status_code}"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -40,7 +36,7 @@ async def health():
 @app.post("/search")
 async def search(request: SearchRequest):
     """Поиск по кадастровому номеру"""
-    data = await get_nspd_data(request.cadastral_number)
+    data = get_nspd_data(request.cadastral_number)
     
     if "error" in data:
         return {
