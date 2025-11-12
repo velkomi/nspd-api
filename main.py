@@ -1,32 +1,35 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import urllib3
+import subprocess
+import json
+import shlex
 
-app = FastAPI(title="NSPD API", version="4.3.0")
+app = FastAPI(title="NSPD API", version="4.4.0")
 
 class SearchRequest(BaseModel):
     cadastral_number: str
 
-http = urllib3.PoolManager()
-
 def get_nspd_data(cadastral_number: str):
-    """Получает данные из NSPD API"""
+    """Получает данные используя системный curl"""
     url = f"https://nspd.gov.ru/api/geoportal/v2/search/geoportal?thematicSearchId=1&query={cadastral_number}"
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Referer": "https://nspd.gov.ru/",
-        "X-Requested-With": "XMLHttpRequest"
-    }
-    
     try:
-        response = http.request('GET', url, headers=headers, timeout=urllib3.Timeout(connect=5, read=25), retries=urllib3.Retry(3))
-        if response.status == 200:
-            import json
-            return json.loads(response.data.decode('utf-8'))
+        cmd = [
+            "curl",
+            "-s",
+            "-H", "User-Agent: Mozilla/5.0",
+            "-H", "Accept: application/json",
+            "-H", "Referer: https://nspd.gov.ru/",
+            "-H", "X-Requested-With: XMLHttpRequest",
+            url
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        
+        if result.returncode == 0:
+            return json.loads(result.stdout)
         else:
-            return {"error": f"Status code: {response.status}"}
+            return {"error": f"Curl error: {result.returncode}"}
     except Exception as e:
         return {"error": str(e)}
 
