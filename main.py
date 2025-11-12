@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import requests
-import os
+import urllib3
 
-app = FastAPI(title="NSPD API", version="4.2.0")
+app = FastAPI(title="NSPD API", version="4.3.0")
 
 class SearchRequest(BaseModel):
     cadastral_number: str
+
+http = urllib3.PoolManager()
 
 def get_nspd_data(cadastral_number: str):
     """Получает данные из NSPD API"""
@@ -19,13 +20,13 @@ def get_nspd_data(cadastral_number: str):
         "X-Requested-With": "XMLHttpRequest"
     }
     
-    # Railway не блокирует requests, только httpx!
     try:
-        response = requests.get(url, headers=headers, timeout=30, verify=False)
-        if response.status_code == 200:
-            return response.json()
+        response = http.request('GET', url, headers=headers, timeout=urllib3.Timeout(connect=5, read=25), retries=urllib3.Retry(3))
+        if response.status == 200:
+            import json
+            return json.loads(response.data.decode('utf-8'))
         else:
-            return {"error": f"Status code: {response.status_code}"}
+            return {"error": f"Status code: {response.status}"}
     except Exception as e:
         return {"error": str(e)}
 
