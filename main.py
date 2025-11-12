@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import httpx
+import os
 
-app = FastAPI(title="NSPD API", version="4.0.0")
+app = FastAPI(title="NSPD API", version="4.1.0")
 
 class SearchRequest(BaseModel):
     cadastral_number: str
@@ -18,8 +19,12 @@ async def get_nspd_data(cadastral_number: str):
         "X-Requested-With": "XMLHttpRequest"
     }
     
+    # Проверяем есть ли переменная окружения для прокси
+    proxy = os.getenv("HTTP_PROXY") or os.getenv("HTTPS_PROXY")
+    
     try:
-        async with httpx.AsyncClient(timeout=30, verify=False) as client:
+        # Если есть прокси - используем его
+        async with httpx.AsyncClient(timeout=30, verify=False, proxies=proxy) as client:
             response = await client.get(url, headers=headers)
             if response.status_code == 200:
                 return response.json()
@@ -41,7 +46,7 @@ async def search(request: SearchRequest):
         return {
             "cadastral_number": request.cadastral_number,
             "status": "error",
-            "message": "Object not found"
+            "message": "Object not found or API error"
         }
     
     features = None
@@ -64,7 +69,6 @@ async def search(request: SearchRequest):
     options = props.get("options", {})
     geometry = feature.get("geometry", {})
     
-    # === ПЛОЩАДЬ: УТОЧНЕННАЯ или ДЕКЛАРИРОВАННАЯ ===
     area_verified = options.get("land_record_area_verified")
     area_declared = options.get("declared_area")
     area_specified = options.get("specified_area")
@@ -83,7 +87,6 @@ async def search(request: SearchRequest):
         final_area = area_specified or area_record
         area_type = "уточненная"
     
-    # === СТАТУС УЧАСТКА ===
     status_value = options.get("status", "") or options.get("previously_posted", "")
     
     return {
