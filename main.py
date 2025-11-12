@@ -1,41 +1,55 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-import subprocess
-import json
-import shlex
+import requests
+import os
+import urllib3
 
-app = FastAPI(title="NSPD API", version="4.4.0")
+# Отключаем SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+app = FastAPI(title="NSPD API", version="5.0.0")
 
 class SearchRequest(BaseModel):
     cadastral_number: str
 
 def get_nspd_data(cadastral_number: str):
-    """Получает данные используя системный curl"""
+    """Получает данные через Bright Data proxy"""
     url = f"https://nspd.gov.ru/api/geoportal/v2/search/geoportal?thematicSearchId=1&query={cadastral_number}"
     
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "application/json",
+        "Referer": "https://nspd.gov.ru/",
+    }
+    
+    # Получаем прокси из переменной окружения
+    proxy_url = os.getenv("PROXY_URL")
+    
+    proxies = {}
+    if proxy_url:
+        proxies = {
+            "http": proxy_url,
+            "https": proxy_url,
+        }
+    
     try:
-        cmd = [
-            "curl",
-            "-s",
-            "-H", "User-Agent: Mozilla/5.0",
-            "-H", "Accept: application/json",
-            "-H", "Referer: https://nspd.gov.ru/",
-            "-H", "X-Requested-With: XMLHttpRequest",
-            url
-        ]
-        
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        
-        if result.returncode == 0:
-            return json.loads(result.stdout)
+        response = requests.get(
+            url, 
+            headers=headers, 
+            timeout=30, 
+            proxies=proxies, 
+            verify=False
+        )
+        if response.status_code == 200:
+            return response.json()
         else:
-            return {"error": f"Curl error: {result.returncode}"}
+            return {"error": f"Status code: {response.status_code}"}
     except Exception as e:
         return {"error": str(e)}
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": "5.0.0"}
 
 @app.post("/search")
 async def search(request: SearchRequest):
@@ -46,7 +60,7 @@ async def search(request: SearchRequest):
         return {
             "cadastral_number": request.cadastral_number,
             "status": "error",
-            "message": "Object not found or API error"
+            "message": str(data.get("error", "Unknown error"))
         }
     
     features = None
